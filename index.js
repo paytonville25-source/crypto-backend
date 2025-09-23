@@ -1,40 +1,55 @@
 const express = require("express");
-const axios = require("axios"); // install with npm install axios
+const fetch = require("node-fetch"); // make sure you installed: npm install node-fetch
 const bodyParser = require("body-parser");
 
 const app = express();
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
-const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
 
-// 1. Unity asks for a payment → we create it via NowPayments
+// Create Payment route
 app.post("/create-payment", async (req, res) => {
   try {
-    const response = await axios.post(
-      "https://api.nowpayments.io/v1/payment",
-      req.body,
-      { headers: { "x-api-key": NOWPAYMENTS_API_KEY, "Content-Type": "application/json" } }
-    );
+    const apiKey = process.env.NOWPAYMENTS_API_KEY;
 
-    res.json(response.data);
+    // Check if API key is missing
+    if (!apiKey) {
+      return res.status(500).json({ error: "NOWPAYMENTS_API_KEY not set on server" });
+    }
+
+    // Forward request to NowPayments
+    const response = await fetch("https://api.nowpayments.io/v1/payment", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+      },
+      body: JSON.stringify(req.body),
+    });
+
+    const data = await response.json();
+
+    // If NowPayments returns error, pass it back
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: "NowPayments API error",
+        details: data,
+      });
+    }
+
+    // Success → return payment info to Unity
+    res.json(data);
   } catch (err) {
-    console.error(err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to create payment" });
+    console.error("Server error:", err);
+    res.status(500).json({ error: "Server crashed", details: err.message });
   }
 });
 
-// 2. NowPayments notifies us (callback)
-app.post("/nowpayments-callback", async (req, res) => {
-  console.log("Callback received:", req.body);
-
-  // Check payment status
-  if (req.body.payment_status === "finished") {
-    // ✅ Grant PlayFab currency here (call PlayFab API with Server Secret Key)
-    console.log("Payment confirmed. Awarding coins to player...");
-  }
-
-  res.sendStatus(200);
+// Root route (for quick testing)
+app.get("/", (req, res) => {
+  res.send("Hello World! Server is running 🚀");
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
