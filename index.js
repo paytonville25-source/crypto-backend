@@ -1,87 +1,94 @@
 const express = require("express");
 const axios = require("axios");
 const bodyParser = require("body-parser");
+const cors = require("cors");
 
 const app = express();
+
+// Middleware
+app.use(cors());
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Add CORS middleware to handle Unity WebGL requests
-app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-    next();
+// Test route
+app.get("/", (req, res) => {
+    res.json({ message: "Server is running 🚀", timestamp: new Date().toISOString() });
 });
 
-// Root route
-app.get("/", (req, res) => {
-    res.send("Hello World! Server is running 🚀");
+// Health check
+app.get("/health", (req, res) => {
+    res.json({ status: "OK", serverTime: new Date().toISOString() });
 });
 
 // Create Payment route
 app.post("/create-payment", async (req, res) => {
+    console.log("Received payment request:", JSON.stringify(req.body, null, 2));
+    
     try {
         const apiKey = process.env.NOWPAYMENTS_API_KEY;
 
         if (!apiKey) {
-            return res.status(500).json({ error: "NOWPAYMENTS_API_KEY not set on server" });
-        }
-
-        const response = await axios.post("https://api.nowpayments.io/v1/payment", req.body, {
-            headers: {
-                "Content-Type": "application/json",
-                "x-api-key": apiKey,
-            },
-        });
-
-        res.json(response.data);
-    } catch (err) {
-        console.error("Server error:", err);
-        
-        if (err.response) {
-            return res.status(err.response.status).json({
-                error: "NowPayments API error",
-                details: err.response.data,
+            console.error("NOWPAYMENTS_API_KEY is missing");
+            return res.status(500).json({ 
+                error: "Server configuration error: NOWPAYMENTS_API_KEY not set" 
             });
         }
-        
-        res.status(500).json({ error: "Server error", details: err.message });
-    }
-});
 
-// Get minimum amount
-app.get("/get-min-amount/:from_currency/:to_currency", async (req, res) => {
-    try {
-        const { from_currency, to_currency } = req.params;
-        const apiKey = process.env.NOWPAYMENTS_API_KEY;
-
-        if (!apiKey) {
-            return res.status(500).json({ error: "NOWPAYMENTS_API_KEY not set" });
+        // Validate required fields
+        const required = ['price_amount', 'price_currency', 'pay_currency', 'order_id'];
+        for (const field of required) {
+            if (!req.body[field]) {
+                return res.status(400).json({ 
+                    error: `Missing required field: ${field}` 
+                });
+            }
         }
 
-        const response = await axios.get(
-            `https://api.nowpayments.io/v1/min-amount?currency_from=${from_currency}&currency_to=${to_currency}`,
+        const response = await axios.post(
+            "https://api.nowpayments.io/v1/payment", 
+            req.body, 
             {
-                headers: { "x-api-key": apiKey },
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": apiKey,
+                },
+                timeout: 10000 // 10 second timeout
             }
         );
 
+        console.log("NowPayments API response:", response.data);
         res.json(response.data);
+
     } catch (err) {
-        console.error("Min amount error:", err);
+        console.error("Payment creation error:", err.message);
         
         if (err.response) {
+            // NowPayments API returned an error
+            console.error("NowPayments API error details:", err.response.data);
             return res.status(err.response.status).json({
                 error: "NowPayments API error",
                 details: err.response.data,
             });
+        } else if (err.request) {
+            // Request was made but no response received
+            console.error("No response from NowPayments API");
+            return res.status(503).json({
+                error: "Cannot connect to payment service",
+                details: "Service temporarily unavailable"
+            });
+        } else {
+            // Other errors
+            console.error("Server error:", err.message);
+            return res.status(500).json({
+                error: "Server error",
+                details: err.message
+            });
         }
-        
-        res.status(500).json({ error: "Server error", details: err.message });
     }
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🔑 API Key set: ${process.env.NOWPAYMENTS_API_KEY ? 'YES' : 'NO'}`);
 });
