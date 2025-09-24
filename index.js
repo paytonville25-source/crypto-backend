@@ -23,37 +23,33 @@ app.get("/health", (req, res) => {
 
 // Create Payment route
 app.post("/create-payment", async (req, res) => {
-    console.log("Received payment request:", JSON.stringify(req.body, null, 2));
-    
+    console.log("Received payment request:", req.body);
+
     try {
         const apiKey = process.env.NOWPAYMENTS_API_KEY;
-
         if (!apiKey) {
-            console.error("NOWPAYMENTS_API_KEY is missing");
-            return res.status(500).json({ 
-                error: "Server configuration error: NOWPAYMENTS_API_KEY not set" 
-            });
+            return res.status(500).json({ error: "NOWPAYMENTS_API_KEY not set" });
         }
 
-        // Validate required fields
-        const required = ['price_amount', 'price_currency', 'pay_currency', 'order_id'];
-        for (const field of required) {
-            if (!req.body[field]) {
-                return res.status(400).json({ 
-                    error: `Missing required field: ${field}` 
-                });
-            }
-        }
+        // Build payload explicitly
+        const payload = {
+            price_amount: req.body.price_amount,
+            price_currency: req.body.price_currency,
+            pay_currency: req.body.pay_currency,
+            order_id: req.body.order_id,
+            order_description: req.body.order_description || "Unity Game Purchase"
+        };
+
+        console.log("Forwarding to NowPayments:", payload);
 
         const response = await axios.post(
-            "https://api.nowpayments.io/v1/payment", 
-            req.body, 
+            "https://api.nowpayments.io/v1/payment",
+            payload,
             {
                 headers: {
                     "Content-Type": "application/json",
                     "x-api-key": apiKey,
                 },
-                timeout: 10000 // 10 second timeout
             }
         );
 
@@ -61,32 +57,16 @@ app.post("/create-payment", async (req, res) => {
         res.json(response.data);
 
     } catch (err) {
-        console.error("Payment creation error:", err.message);
-        
         if (err.response) {
-            // NowPayments API returned an error
-            console.error("NowPayments API error details:", err.response.data);
-            return res.status(err.response.status).json({
-                error: "NowPayments API error",
-                details: err.response.data,
-            });
-        } else if (err.request) {
-            // Request was made but no response received
-            console.error("No response from NowPayments API");
-            return res.status(503).json({
-                error: "Cannot connect to payment service",
-                details: "Service temporarily unavailable"
-            });
+            console.error("NowPayments API error:", err.response.data);
+            res.status(err.response.status).json(err.response.data);
         } else {
-            // Other errors
             console.error("Server error:", err.message);
-            return res.status(500).json({
-                error: "Server error",
-                details: err.message
-            });
+            res.status(500).json({ error: err.message });
         }
     }
 });
+
 
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
