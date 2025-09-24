@@ -31,13 +31,13 @@ app.post("/create-payment", async (req, res) => {
             return res.status(500).json({ error: "NOWPAYMENTS_API_KEY not set" });
         }
 
-        // Build payload explicitly
+        // 🔑 Explicit payload conversion
         const payload = {
-            price_amount: req.body.price_amount,
-            price_currency: req.body.price_currency,
-            pay_currency: req.body.pay_currency,
-            order_id: req.body.order_id,
-            order_description: req.body.order_description || "Unity Game Purchase"
+            price_amount: parseFloat(req.body.price_amount), // ensure number
+            price_currency: String(req.body.price_currency || "usd"),
+            pay_currency: String(req.body.pay_currency || "btc"),
+            order_id: String(req.body.order_id),
+            order_description: String(req.body.order_description || "Unity Game Purchase"),
         };
 
         console.log("Forwarding to NowPayments:", payload);
