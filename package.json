@@ -7,7 +7,7 @@
     "start": "node index.js",
     "dev": "node index.js"
   },
-  "keywords": ["crypto", "payments", "unity", "nowpayments"],
+  "keywords": ["crypto", "payments", "unity"],
   "author": "",
   "license": "ISC",
   "type": "commonjs",

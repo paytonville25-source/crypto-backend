@@ -21,14 +21,31 @@ app.get("/health", (req, res) => {
     res.json({ status: "OK", serverTime: new Date().toISOString() });
 });
 
-// Create Payment route
+// Debug endpoint to check environment variables
+app.get("/debug-env", (req, res) => {
+    res.json({
+        nowpaymentsKey: process.env.NOWPAYMENTS_API_KEY ? "SET" : "MISSING",
+        nodeEnv: process.env.NODE_ENV,
+        timestamp: new Date().toISOString(),
+        port: PORT
+    });
+});
+
+// Create Payment route with better error handling
 app.post("/create-payment", async (req, res) => {
-    console.log("Received payment request:", JSON.stringify(req.body, null, 2));
+    console.log("🔍 Received payment request:", JSON.stringify(req.body, null, 2));
 
     try {
         const apiKey = process.env.NOWPAYMENTS_API_KEY;
+        console.log("🔑 API Key present:", !!apiKey);
+        
         if (!apiKey) {
-            return res.status(500).json({ error: "NOWPAYMENTS_API_KEY not set" });
+            console.error("❌ NOWPAYMENTS_API_KEY not set");
+            return res.status(500).json({ 
+                error: "Server configuration error",
+                message: "NOWPAYMENTS_API_KEY environment variable is not set",
+                details: "Please set the API key in Render environment variables"
+            });
         }
 
         // Validate required fields
@@ -41,7 +58,7 @@ app.post("/create-payment", async (req, res) => {
             }
         }
 
-        // 🔑 Explicit payload conversion with validation
+        // Convert price_amount to number
         const priceAmount = parseFloat(req.body.price_amount);
         if (isNaN(priceAmount) || priceAmount <= 0) {
             return res.status(400).json({ error: "Invalid price_amount" });
@@ -56,7 +73,7 @@ app.post("/create-payment", async (req, res) => {
             ipn_callback_url: process.env.IPN_CALLBACK_URL || `${req.protocol}://${req.get('host')}/ipn-callback`
         };
 
-        console.log("Forwarding to NowPayments:", payload);
+        console.log("📤 Forwarding to NowPayments:", payload);
 
         const response = await axios.post(
             "https://api.nowpayments.io/v1/payment",
@@ -66,26 +83,32 @@ app.post("/create-payment", async (req, res) => {
                     "Content-Type": "application/json",
                     "x-api-key": apiKey,
                 },
-                timeout: 30000 // 30 second timeout
+                timeout: 30000
             }
         );
 
-        console.log("NowPayments API response received");
+        console.log("✅ NowPayments API response received");
         res.json(response.data);
 
     } catch (err) {
-        console.error("Payment creation error:", err.message);
+        console.error("💥 Payment creation error:", err.message);
+        console.error("Stack trace:", err.stack);
         
         if (err.response) {
             console.error("NowPayments API error details:", err.response.data);
             res.status(err.response.status).json({
                 error: "NowPayments API error",
+                message: err.message,
                 details: err.response.data
             });
         } else if (err.code === 'ECONNABORTED') {
             res.status(408).json({ error: "Request timeout" });
         } else {
-            res.status(500).json({ error: "Internal server error" });
+            res.status(500).json({
+                error: "Internal server error",
+                message: err.message,
+                stack: process.env.NODE_ENV === 'production' ? undefined : err.stack
+            });
         }
     }
 });
@@ -141,4 +164,5 @@ app.get("/min-amount", async (req, res) => {
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`🔑 API Key set: ${process.env.NOWPAYMENTS_API_KEY ? 'YES' : 'NO'}`);
+    console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
